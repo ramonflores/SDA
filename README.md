@@ -23,7 +23,7 @@ An important difference is that SDA not only shows coincidences, SDA is capable 
 We really hope this work might be useful for you because that is its purpose. Check the **SDA user guide.pdf** to know more about SDA.
 
 
-### Contact
+## Contact
 We will feel it great if you test this script and make us greetings, comments or report us any bug or fail. Please, contact us.
 
 Ramon Flores (ramon.flores.r@outlook.com)
