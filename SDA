@@ -31,7 +31,7 @@ our $VERSION = "0.10.0"; # Program version
 
 my %opts;									 # For options in terminal
 my ($filename, $resultsDir, $outputDirName) = ("",fileparse($0).".Results", ""); # For input fasta file, directory results, and directory output name
-my ($annotationFound, $outputFileContent) = (0,"");				 # Flag for annotation found. Content if at least one annotation is found
+my ($annotationFound, $outputFileContent, $cpu) = (0,"", 1);			 # Flag for annotation found. Content if at least one annotation is found
 my ($pfamDB, $trFlag, $inputEvalue, $accuracy ) = ("", 1, "1e-10", "0.85");	 # Path for Pfam-A.hmm.  Flag, 1 transcriptome, 0 no transcriptome. Evalue input
 my (%pfamAnnot, %completeHeaders, %colors, %coincidences, %pfLooked, %pfName);	 # For annotationFile sub, complete headers for pfamProcess sub (file COMP), colors, and coincidences.
 my @colorList = ("#00FF55", "#FF5555", "#FFE700", "#AABBFF", "#A0A0A0", "#00CCCC", "#CC77CC", "#99FFFF", "#FFFFBB", "#FF9999", "#FFFF11", "#EEAAFF",
@@ -41,7 +41,7 @@ my $hmmscan = `which hmmscan`;
 chomp $hmmscan;
 $hmmscan = fileparse $hmmscan;
 
-die "Use $0 -h for help.\n" unless getopts('a:e:f:ghl:p:t:v',\%opts); 
+die "Use $0 -h for help.\n" unless getopts('a:e:f:ghl:o:p:t:v',\%opts); 
 
 die "You must need install hmmscan to work with this program. Please get it from www.hmmer.org/download.html \n"
 	unless $hmmscan !~ /\/[hmmscan]\z/;
@@ -54,7 +54,8 @@ if ($opts{f}) {
 }
 $inputEvalue = &validateEvalue if $opts{e};			# If user sets evalue
 $accuracy = &validateAccuracy if $opts{a};			# If user sets accuracy
-$pfamDB = &lookForDB if $opts{p};				# Reading and processing Pfam-A.hmm file
+$cpu = &validateCPU if $opts{c};				# Setting number of cpu
+$pfamDB = &lookForDB if $opts{p} && !$opts{l};			# Reading and processing Pfam-A.hmm file
 %pfamAnnot = &annotationFile if $opts{t};			# Gets annotation results
 
 if ($opts{f}){
@@ -69,9 +70,15 @@ if ($opts{f}){
 chomp $filename;
 
 # Verifying SDAversion.Results directory and changing directory
-chdir;
+if ($opts{o}){
+    system("cd $opts{o}");
+} else {
+    chdir;
+}
 mkdir "$resultsDir" unless (-e -w "$resultsDir");
 chdir "$resultsDir";
+$resultsDir = `pwd`;
+chomp($resultsDir);
 
 if ($opts{f} || $opts{l}) {
     my %fastaSeq;
@@ -98,7 +105,7 @@ if ($opts{f} || $opts{l}) {
         print RESULTS "$outputFileContent";
         close RESULTS;
         print "\n*** Annotation found! Check your $filename.out file for details. ***\n";
-	print "\n*** You'll find your results in\n\t~/$resultsDir/$outputDirName\n***\n\n";
+	print "\n*** You'll find your results in\n\t$resultsDir/$outputDirName\n***\n\n";
     } else {
         print "\n*** No annotation found! ***\n\n";
     }
@@ -117,6 +124,8 @@ sub HELP_MESSAGE {
     print "\tSDA creates a summary table for coincidences or similarities between an input FASTA protein sequence file or a PFAM list (.out file). Creates a HMM table profile (.table) and a graph (.pdf) for each sequence in the FASTA file. If there isn't coincidences, SDA won't create the .out file.\n\n";
     print "\t-a <VALUE>\n";
     print "\t\tuse it to define the accuracy of the hmm table for each domain. This must be a value between 0 and 1 (default, 0.85).\n\n";
+    print "\t-c <VALUE>\n";
+    print "\t\tuse it to indicate the number of processors for hmmscan.\n\n";
     print "\t-e <VALUE>\n";
     print "\t\tuse it to change the default e-value (1e-10). This must be positive and with the form #e-# or as an integer.\n\n";
     print "\t-f <FILE>\n";
@@ -127,6 +136,8 @@ sub HELP_MESSAGE {
     print "\t\tshows this help.\n\n";
     print "\t-l <LIST|FILE>\n";
     print "\t\tuse it to search a list of pfams as input or in a file. The pfams must be separated by ','.\n\n";
+    print "\t-o <PATH>\n";
+    print "\t\tuse it to indicate the location of the output results directory.\n\n";
     print "\t-p <FILE>\n";
     print "\t\tyou MUST use it to indicate the location of your Pfam-A.hmm file.\n\n";
     print "\t-t <FILE>\n";
@@ -177,6 +188,20 @@ sub validateEvalue {
         print "\nWrong format in E-value! Set to $value\n";
     }
     return $value;
+}
+
+
+# Validating CPUs
+sub validateCPU {
+    my $processors = $opts{c};
+    if($processors > 0) {
+    	$processors = ($processors =~ /(\d)(\.\d+)?/) ? $1 : 1;
+    	print "CPUs number set to $processors\n";
+    } else {
+    	print "Wrong CPUs number! Set to 1\n";
+    	$processors = 1;
+    }
+    return $processors;
 }
 
 
@@ -520,7 +545,7 @@ sub graphDomains {
     my ($qLength, $size, $spacing, $column);
     my ($gHeight, $name, $space, @data) = (350, "", 20, ());
     my $fHeight = $gHeight/5;
-    %colors = ();
+    my %localColors = ();
     $name = ($pfamFile =~ /(.*)\.PFAM\.out/) ? $completeHeaders{$1} : $pfamFile;        # Gets the header name for graph title
 
     open FILE, "<", "$pfamFile" || die "$pfamFile cannot being opened for graphs!";
@@ -530,17 +555,19 @@ sub graphDomains {
             push(@data, join ',', $line[18]-$line[17], $line[17], $line[0]);		# Saves length,from,target  for each line
             $qLength = $line[5] unless defined $qLength;		      		# Defines once sequence query length
             $colors{$line[0]} .= $colorList[$colorCounter++ % scalar @colorList];	# Assigns a color for each domain
+            $localColors{$line[0]} = $colors{$line[0]};
         }
     }
     close FILE;
 
-    $column = (scalar keys %colors < 6 ) ? 2 : (scalar keys %colors < 12) ? 4 : 6;
+    $column = (scalar keys %localColors < 6 ) ? 2 : (scalar keys %localColors < 12) ? 4 : 6;
     $size = (length $name > $qLength/2) ? 8 : 3;
 
     my $svg = SVG->new( width => 4*$qLength + $size*$space + 130*$column, height => $gHeight );
 
     $svg->line( x1 => 3*$space, y1 => $gHeight/2, x2 => $space + 4*$qLength, y2 => $gHeight/2, 'stroke' => 'black' );
     $svg->text('x' => $space, 'y' => 2*$space, 'fill' => 'black', 'font-size' => 26)->cdata("$name");
+    $svg->text('x' => $space, 'y' => 320, 'fill' => 'black', 'font-size' => 26)->cdata("Query length = $qLength");
     ($size, $column) = (0, 0); # var for change rectangles size
 
     foreach my $graph (@data){
@@ -548,14 +575,14 @@ sub graphDomains {
         $svg->rectangle(
             x => 3*$space + 4*$elem[1], y => $fHeight + $size/2, rx => 20, ry => 20,		 # Coord, 'y' is incremented to note differences
             width => $elem[0]*4, height => 3*$fHeight - $size,					 # size, height decremented in $size
-            style => {'fill' => "$colors{$elem[2]}", 'stroke-width' => 1, 'fill-opacity' => 0.8} # Changing color for each element (at most 12)
+            style => {'fill' => "$localColors{$elem[2]}", 'stroke-width' => 1, 'fill-opacity' => 0.8} # Changing color for each element (at most 12)
         );
         $size = ($size == 125) ? 0 : $size + 25;						 # Changing size of rectangles
     }
     $space = 80;
-    foreach my $elem (sort keys %colors){
+    foreach my $elem (sort keys %localColors){
 	$svg->rectangle(x => 4*$qLength + 100 + $column, y => $space,
-            width => 30, height => 30, style => {'fill' => $colors{$elem}, 'fill-opacity' => 0.8}
+            width => 30, height => 30, style => {'fill' => $localColors{$elem}, 'fill-opacity' => 0.8}
         );
         $svg->text( 'x' => 4*$qLength + 140 + $column, 'y' => $space + 20, 'fill' => 'black',
             'font-size' => 20,)->cdata("$elem");
