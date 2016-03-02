@@ -81,7 +81,7 @@ if ($opts{f} || $opts{l}) {
 	foreach my $alias (sort keys %fastaSeq) {
 	    &pfamProcess("$alias.PFAM.out") if (-e "$alias.PFAM.out");
 	}
-	&concSeqFiles if (-e "$filename.PFAM.out");
+	&concSeqFiles;# if (-e "$filename.PFAM.out"); ### Commented for fails ###
     } elsif ($opts{l} && $opts{t}) {
 	$outputDirName = "";
 	%fastaSeq = &validatePfamInput($filename);
