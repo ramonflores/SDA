@@ -71,7 +71,7 @@ chomp $filename;
 
 # Verifying SDAversion.Results directory and changing directory
 if ($opts{o}){
-    system("cd $opts{o}");
+    chdir $opts{o};
 } else {
     chdir;
 }
