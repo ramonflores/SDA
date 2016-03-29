@@ -13,7 +13,7 @@ To get a better experience, there are some considerations you have to take befor
 * You also need the **Pfam-A.hmm** file, this file is used for searching and getting some useful information about the input file. For this work, we use the Pfam current version (February, 2016), you might download it from **FTP->current_release->Pfam-A.hmm.gz** on the pfam site [pfam.xfam.org/][3].
 
 
-## What does SDA make?
+## What does SDA do?
 With SDA you can get almost the same as with the pfam site but with some differences. SDA creates the summary table of the **hmmscan** for the input, a file with the coincidences (or similarities) and frecuencies of each PFAM architecture, and a file with the graphics of the architecture for the FASTA sequence(s).
 
 An important difference is that SDA not only shows coincidences, SDA is capable to show similarities. This similarities may help you to understand some things or, make you doubt about some other things.
