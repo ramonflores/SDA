@@ -30,25 +30,27 @@ my $hmmscan = `which hmmscan`;
 chomp $hmmscan;
 $hmmscan = fileparse $hmmscan;
 
-die "Use $0 -h for help.\n" unless getopts('a:c:e:f:ghl:o:p:t:v',\%opts); 
+die "Use $0 -h for help.\n" unless getopts('a:c:e:f:ghl:o:p:t:v',\%opts);
+die "Use $0 -h for help.\n" unless %opts;
 
 die "You must need install hmmscan to work with this program. Please get it from www.hmmer.org/download.html \n"
 	unless $hmmscan !~ /\/[hmmscan]\z/;
 
-&HELP_MESSAGE if $opts{h};					# Help message. Die if has more options.
-&VERSION_MESSAGE if $opts{v};					# Version message. Die if has more options.
-$trFlag = 0 if $opts{g};					# Turn the flag on if the annotation list is a genome. Default transcriptome.
+&HELP_MESSAGE if $opts{h};
+&VERSION_MESSAGE if $opts{v};
+$trFlag = 0 if $opts{g};
 if ($opts{f}) {
     die "$opts{f} is not a protein file!\n" unless &valFasta($opts{f});	# Validates if the fasta file is a protein file or not.
 }
-$cpu = &validateCPU if $opts{c};				# Set number of CPUs for hmmscan
-$inputEvalue = &validateEvalue if $opts{e};			# If user sets evalue
-$accuracy = &validateAccuracy if $opts{a};			# If user sets accuracy
-$pfamDB = &lookForDB if $opts{p};				# Reading and processing Pfam-A.hmm file
-%pfamAnnot = &annotationFile if $opts{t};			# Gets annotation results
+$cpu = &validateCPU if $opts{c};
+$inputEvalue = &validateEvalue if $opts{e};
+$accuracy = &validateAccuracy if $opts{a};
+$pfamDB = &lookForDB if $opts{p};
+%pfamAnnot = &annotationFile if $opts{t};
 
 if ($opts{f}){
     $filename = `readlink -f $opts{f}`;
+    die "You have to indicate the Pfam-A.hmm path (with -p) to use this option.\n" unless $opts{p};
 } elsif ($opts{l}) {
     if (-e $opts{l}) {
         $filename = `readlink -f $opts{l}`;
@@ -196,7 +198,7 @@ sub validateCPU {
 ## Concatenate sequences files
 sub concSeqFiles {
     my $content = "";
-    my @sequencesFiles = <"$filename.seq*">;  # Gets all the sequences files
+    my @sequencesFiles = <"$filename.seq*">;
     my $counterLines = 0;
     foreach my $file (@sequencesFiles){
         open FILE, "<", "$file" || die "Cannot open the file $file!\n";
@@ -220,11 +222,11 @@ sub concSeqFiles {
 
 ### Looking for Pfam-A.hmm database
 sub lookForDB {	
-    my $filename = $opts{p};                              # Gets path for Pfam-A.hmm
+    my $filename = $opts{p};
     die "$filename doesn't exist!\n" unless -e $filename;
     open PFAM, "<", $filename || die "Cannot open the file!";
     close PFAM;
-    return $filename;          # Return path for Pfam-A.hmm database
+    return $filename;
 }
 
 
@@ -304,12 +306,12 @@ sub pfamProcess{
         unless(/\A#/){
             $nonEmptyFile = 1;
             my @line = split /\s+/, $_;
-	    my @desc;							# Array for saving description
-	    push (@desc, pop @line) while (scalar @line > 22);		# Joining the last columns in just one, this will be the description column
-	    $line[22] = join ' ', reverse @desc;			# RE-assigning description to element line 22
+	    my @desc;							# saving description
+	    push (@desc, pop @line) while (scalar @line > 22);		# description column
+	    $line[22] = join ' ', reverse @desc;			# RE-assigning description
 	    my $accession = (split /\./, $line[1])[0];
 	    $line[0] = "$line[0]\t" if length $line[0] < 8;
-	    $order{$line[3]}{$line[17]} = "$line[18]\t$line[19]\t$line[20]\t$line[1]\t$line[0]\t$line[6]\t\t$line[22]" # Keeps toA fromE toE accession pfName eval desc => keys {qName}{fromAli}
+	    $order{$line[3]}{$line[17]} = "$line[18]\t$line[19]\t$line[20]\t$line[1]\t$line[0]\t$line[6]\t\t$line[22]" # toA fromE toE accession pfName eval desc => keys {qName}{fromAli}
         }
     }
     close PFAM;
@@ -332,7 +334,7 @@ sub pfamProcess{
 	@pfam = sort @pfam;
 	$outputFileContent .= &scoring(\@pfam, join ", ", @names);
     }
-    &graphDomains($inputfile) if (-e "$inputfile");
+    &graphDomains($inputfile) if (-e "$inputfile" && SVG->can("rectangle"));
 }
 
 
@@ -373,7 +375,6 @@ sub validatePfamInput {
 sub lookforPfams {
     my $pfams = shift;
     my @pfams = sort (split ",", $pfams);
-    my ($score, $index) = (0,0);
     $outputFileContent .= "\n## Pfam arquitecture INPUT: $pfams \n";
     $outputFileContent .= &scoring (\@pfams, $pfams);
 }
@@ -430,13 +431,13 @@ sub fastaFile {
     die "$inputFilename doesn't exist!\n" unless -e $inputFilename;
     print "Processing FASTA file\n";
 
-    $filename = fileparse($inputFilename);			    # Getting input filename in global variable
-    $outputDirName = "$filename.Results";  			    # Directory for save results, save more than one for the same file
-    my (%sequences, $header, $alias);				    # Hash for sequences lines{alias} for hmmscan. Complete headers, and seq_ _ _
+    $filename = fileparse($inputFilename);
+    $outputDirName = "$filename.Results";
+    my (%sequences, $header, $alias);
     open FASTA, "<", $inputFilename || die "Cannot open $inputFilename!\n";
     my $seqCounter = 1;
 
-    if (-e "$outputDirName") {			# Verifying if output directory exists.
+    if (-e "$outputDirName") {
         if (-e "$outputDirName/$filename.table" || "$outputDirName/$filename.out" || "$outputDirName/$filename.pdf"){  # If results file exists
             print "\n$filename exists! ";
             $filename = "$filename.".time;   # Renaming file adding a time flag, and hence, directory
@@ -449,7 +450,7 @@ sub fastaFile {
 
     # Reading FASTA file and making distinctions between header and sequence.
     while(<FASTA>){
-        if (/\A>(\S+)(.*)/) {    # If it's a header. Ignores everything after a space
+        if (/\A>(\S+)(.*)/) {
             $header = $1;        # Gets complete header of FASTA file
             $alias = $filename.".seq".($seqCounter < 10 ? "00" : $seqCounter < 100 ? "0" : "").$seqCounter++; # Aliasing header as seq_ _ _
             $completeHeaders{$alias} = join ' ', $header, $2;						      # Saving complete headers with $alias key
@@ -467,7 +468,7 @@ sub fastaFile {
                 print TEMP ">$short\n$sequences{$short}\n";
                 close TEMP;
                 print "Running $hmmscan $pfamDB $tempfile...\n";
-                # The PFAM.out file created will be used in sub procesar. Should I ommit the domT ??
+                # The PFAM.out file created will be used in sub procesar.
                 system("$hmmscan --cpu 1 -E $inputEvalue --domT 30 --domtblout $short.PFAM.out $pfamDB $tempfile > /dev/null");
                 &validateFileAccuracy("$short.PFAM.out") if (-e "$short.PFAM.out");
                 system("rm -f .$filename.*");
@@ -477,7 +478,7 @@ sub fastaFile {
         }
     }
     print "hmmscan search finished!\n\n";
-    return %sequences;				# Returning sequences
+    return %sequences;
 }
 
 
@@ -536,15 +537,15 @@ sub graphDomains {
     my ($gHeight, $name, $space, @data) = (350, "", 20, ());
     my $fHeight = $gHeight/5;
     my %localColors = ();
-    $name = ($pfamFile =~ /(.*)\.PFAM\.out/) ? $completeHeaders{$1} : $pfamFile;        # Gets the header name for graph title
+    $name = ($pfamFile =~ /(.*)\.PFAM\.out/) ? $completeHeaders{$1} : $pfamFile;
 
     open FILE, "<", "$pfamFile" || die "$pfamFile cannot being opened for graphs!";
     while(<FILE>){
         unless(/\A#/){
             my @line = split /\s+/, $_;
-            push(@data, join ',', $line[18]-$line[17], $line[17], $line[0]);		# Saves length,from,target  for each line
-            $qLength = $line[5] unless defined $qLength;		      		# Defines once sequence query length
-            $colors{$line[0]} .= $colorList[$colorCounter++ % scalar @colorList];	# Assigns a color for each domain
+            push(@data, join ',', $line[18]-$line[17], $line[17], $line[0]);
+            $qLength = $line[5] unless defined $qLength;
+            $colors{$line[0]} .= $colorList[$colorCounter++ % scalar @colorList];
             $localColors{$line[0]} = $colors{$line[0]};
         }
     }
@@ -589,3 +590,4 @@ sub graphDomains {
     print GOUT $svg->xmlify;
     close GOUT;
 }
+
