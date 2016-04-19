@@ -1,22 +1,22 @@
 #!/usr/bin/perl -w
 
-#######################################################################
-## SDA v 0.10.0
+###############################################################################################################
+## SDA v 0.10.3
 ##
-## This script was created at the Biotechnology Institute of the UNAM. Cuernavaca, Mexico.
+## This script was created at the Biotechnology Institute of the UNAM. Cuernavaca, Morelos. Mexico. April, 2016.
 ## 
-## Creates a dir called SDA.Results in home directory (defalut) to save results. Inside this directory, there'll be a directory
-##	named FASTAinput.Results, there will be the results files .table, .pdf, and if exists annotation, .out. If some of the
-##	files exist, the new output file is renamed as file.time to avoid overwritting.
+## Creates a dir called SDA.Results in home directory (defalut) to save results. Inside this directory, there'll be
+##      a directory named FASTAinput.Results, there will be the results files .table, .pdf, and if exists annotation,
+##	.out. If some of the files exist, the new output file is renamed as file.time to avoid overwritting.
 ##
-#######################################################################
+###############################################################################################################
 
 use strict;
 use Getopt::Std;	 # For options
 use File::Basename;	 # For get filenames.
 use SVG;		 # For graphs
 
-our $VERSION = "0.10.1"; # Program version
+our $VERSION = "0.10.3"; # Script version
 
 my %opts;									 # For options in terminal
 my ($filename, $resultsDir, $outputDirName) = ("",fileparse($0).".Results", ""); # For input fasta file, directory results, and directory output name
@@ -406,17 +406,16 @@ sub scoring {
 	    foreach my $annotKey (sort keys $pfamAnnot{$annot}) {
 		$tempString .= "## Pfam structure SIMILARITY for $annotKey\n";
 		my @pfams = split "\t", $pfamAnnot{$annot}{$annotKey};
+		my ($from, $to, $name, $desc, $eval);
 		foreach my $individualPF (@pfams) {
 		    my @splitted = split ",", $individualPF;
-		    my ($from, $to, $name, $desc, $eval) = ( (split /-/, $splitted[1]), (split /-/, $splitted[3]), (split /:/, $splitted[2])[1] );
+		    ($from, $to, $name, $desc, $eval) = ( (split /-/, $splitted[1]), (split /-/, $splitted[3]), (split /:/, $splitted[2])[1] );
 		    $name = "$name\t" if length $name < 8;
 		    $tempString .= "   $from\t$to\t -- \t -- \t$splitted[0]\t$name\t$eval\t\t$desc\n";
 		}
-		if (exists $coincidences{$annot}) {
-		    $coincidences{$annot} += 1;
-		} else {
-		    $coincidences{$annot} = 1;
-		    $pfName{$annot} = $pfamList;
+		unless (exists $coincidences{"$annot-$from-$to"}) {
+		    $coincidences{"$annot-$from-$to"} = 1;
+		    $pfName{"$annot-$from-$to"} = $pfamList;
 		}
 	    }
         }
@@ -469,7 +468,7 @@ sub fastaFile {
                 close TEMP;
                 print "Running $hmmscan $pfamDB $tempfile...\n";
                 # The PFAM.out file created will be used in sub procesar.
-                system("$hmmscan --cpu 1 -E $inputEvalue --domT 30 --domtblout $short.PFAM.out $pfamDB $tempfile > /dev/null");
+                system("$hmmscan --cpu $cpu -E $inputEvalue --domT 30 --domtblout $short.PFAM.out $pfamDB $tempfile > /dev/null");
                 &validateFileAccuracy("$short.PFAM.out") if (-e "$short.PFAM.out");
                 system("rm -f .$filename.*");
             }
@@ -507,14 +506,24 @@ sub validateFileAccuracy {
 ## Distribution of similarities
 sub distribution {
     my ($total,$tempString) = (0,"");
-    $total += $coincidences{$_} foreach (keys %coincidences);
+    my (%newCoincidences, %pfNm);
+    foreach (keys %coincidences){
+        my $eachPfam = (split /-/, $_)[0];
+        if (exists $newCoincidences{$eachPfam}) {
+            $newCoincidences{$eachPfam} += 1;
+        } else {
+            $newCoincidences{$eachPfam} = 1;
+            $pfNm{$eachPfam} = $pfName{$_};
+       }
+    }
+    $total += $newCoincidences{$_} foreach (keys %newCoincidences);
     $tempString .= "\n\t\tPFAM FOUND\t\t  FREQ\t R.F.\tQUERY SEQUENCE\n";
-    foreach my $pf (sort keys %coincidences){
-	my $percent = ($coincidences{$pf}/$total)*100;
-	$tempString .=  sprintf "%35s =   %5d\t%2.1f%%\t%s\n", $pf, $coincidences{$pf}, $percent, $pfName{$pf};
+    foreach my $pf (sort keys %newCoincidences){
+        my $percent = ($newCoincidences{$pf}/$total)*100;
+        $tempString .=  sprintf "%35s =   %5d\t%2.1f%%\t%s\n", $pf, $newCoincidences{$pf}, $percent, $pfNm{$pf};
     }
     $tempString .= "    " . sprintf ("-" x 55) . "\n";
-    $tempString .= sprintf "\t\t\t      TOTAL =   %5d", $total;
+    $tempString .= sprintf "\t\t\t      TOTAL =   %5d\n", $total;
     return $tempString;
 }
 
@@ -590,4 +599,3 @@ sub graphDomains {
     print GOUT $svg->xmlify;
     close GOUT;
 }
-
