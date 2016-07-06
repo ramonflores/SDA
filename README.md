@@ -20,7 +20,8 @@ An important difference is that SDA not only shows coincidences, SDA is capable 
 
 
 ## Finally
-We really hope this work might be useful for you because that is its purpose. Check the [SDA user guide.pdf](https://github.com/ramonflores/SDA/blob/master/SDA.user.guide.pdf) to know more about SDA.
+We really hope this work might be useful for you because that is its purpose. Check the [SDA user guide.pdf](https://github.com/ramonflores/SDA/blob/master/SDA%20user%20guide.pdf) to know more about SDA.
+
 
 
 ## Contact
