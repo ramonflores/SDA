@@ -10,7 +10,7 @@ To get a better experience, there are some considerations you have to take befor
 * SDA is a script developed with Perl v5.18.2. We didn't use any version pragma, so we hope you can use it no matter your Perl  version.
 * SDA uses the Perl module **SVG** to make graphics. You have to install this module to make SDA works.
 * You have to get the [**HMMER suite**][2] to make SDA works. For SDA we use HMMER v3.1b1.
-* You also need the **Pfam-A.hmm** file, this file is used for searching and getting some useful information about the input file. For this work, we use the Pfam current version (February, 2016), you might download it from **FTP->current_release->Pfam-A.hmm.gz** on the pfam site [pfam.xfam.org/][3].
+* You also need the **Pfam-A.hmm** file, this file is used for searching and getting some useful information about the input file. For this work, we use the Pfam version 29 (February, 2016), you might download it from **FTP->releases->Pfam29.0->Pfam-A.hmm.gz** on the pfam site [pfam.xfam.org/][3].
 
 
 ## What does SDA do?
