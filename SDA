@@ -15,7 +15,7 @@ use warnings;
 use strict;
 use Getopt::Long qw(GetOptions);
 use File::Basename;	 # For get filenames.
-use SVG;		     # For graphs
+use SVG;		 # For graphs
 
 our $VERSION = "0.10.5";
 my $execCommand = "@ARGV";
@@ -26,8 +26,8 @@ my ($annotationFound, $outputFileContent) = (0, "");# Flag for annotation found.
 my ($inputEvalue, $accuracy, $cpu) = ("1e-10", "0.85", 1);
 my (%pfamAnnot, %completeHeaders, %colors, %coincidences, %pfName);	# &annotationFile, complete headers &pfamProcess (file COMP)
 my @colorList = ("#00FF55", "#FF5555", "#AABBFF", "#909090", "#FFFF11", "#CC97FC", "#00AC00", "#FF701E", "#99FFFF",
-				"#CBCBCB", "#FFC700", "#EFBFFF", "#CCFFCC", "#FF9999", "#00CCCC", "#EAEAEA", "#FFF5BB", "#C800C1",
-				"#6EB5AA", "#EEAA55"); # 20 colors
+		 "#CBCBCB", "#FFC700", "#EFBFFF", "#CCFFCC", "#FF9999", "#00CCCC", "#EAEAEA", "#FFF5BB", "#C800C1",
+		 "#6EB5AA", "#EEAA55"); # 20 colors
 my $colorCounter = 0;
 my $hmmscan = `which hmmscan`;
 chomp $hmmscan;
@@ -57,6 +57,8 @@ if ($fastaFile) {
         print "$fastaFile is not a protein file!";
         die "\n";
     }
+    $fastaFile = `readlink -f $fastaFile`;
+    chomp $fastaFile;
 }
 $cpu = &validateCPU if $cpu;
 $inputEvalue = &validateEvalue if $inputEvalue;
@@ -226,7 +228,8 @@ sub validateAccuracy {
 
 ### Looking for Pfam-A.hmm database
 sub lookForDB {	
-    my $pfdb = $pfamDB;
+    my $pfdb = `readlink -f $pfamDB`;
+    chomp $pfdb;
     die "$pfdb doesn't exist!\n" unless -e $pfdb;
     open PFAM, "<", $pfdb || die "Cannot open the file!";
     close PFAM;
