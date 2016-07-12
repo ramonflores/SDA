@@ -1,138 +1,153 @@
-#!/usr/bin/perl -w
+#! /usr/bin/env perl
 
-###############################################################################################################
-## SDA v 0.10.3
+#########################################################################################################
+## SDA v 0.10.5   -    July, 2016
 ##
-## This script was created at the Biotechnology Institute of the UNAM. Cuernavaca, Morelos. Mexico. April, 2016.
+## This script was created at the Biotechnology Institute of the UNAM. Cuernavaca, Morelos. Mexico.
 ## 
-## Creates a dir called SDA.Results in home directory (defalut) to save results. Inside this directory, there'll be
-##      a directory named FASTAinput.Results, there will be the results files .table, .pdf, and if exists annotation,
-##	.out. If some of the files exist, the new output file is renamed as file.time to avoid overwritting.
-##
-###############################################################################################################
+## Creates a dir called SDA.Results in home directory (default) to save results. Inside this directory,
+##    there'll be a directory named FASTAinput.Results, there will be the results files .table, .pdf,
+##    and if exists annotation, .out.
+## If some of the files exist, the new output file is renamed as file.time to avoid overwritting.
+#########################################################################################################
 
+use warnings;
 use strict;
-use Getopt::Std;	 # For options
+use Getopt::Long qw(GetOptions);
 use File::Basename;	 # For get filenames.
-use SVG;		 # For graphs
+use SVG;		     # For graphs
 
-our $VERSION = "0.10.3"; # Script version
-
-my %opts;									 # For options in terminal
-my ($filename, $resultsDir, $outputDirName) = ("",fileparse($0).".Results", ""); # For input fasta file, directory results, and directory output name
-my ($annotationFound, $outputFileContent, $cpu) = (0, "", 1);			 # Flag for annotation found. Content if at least one annotation is found
-my ($pfamDB, $trFlag, $inputEvalue, $accuracy ) = ("", 1, "1e-10", "0.85");	 # Path for Pfam-A.hmm.  Flag, 1 transcriptome, 0 no transcriptome. Evalue input
-my (%pfamAnnot, %completeHeaders, %colors, %coincidences, %pfName);		 # For annotationFile sub, complete headers for pfamProcess sub (file COMP), colors, and coincidences.
-my @colorList = ("#00FF55", "#FF5555", "#FFE700", "#AABBFF", "#A0A0A0", "#00CCCC", "#CC77CC", "#99FFFF", "#FFFFBB", "#FF9999", "#FFFF11", "#EEAAFF",
-		 "#00CC66", "#FF9900", "#DCDCDC", "#6EB5AA", "#C893A1", "#EEAA55", "#CCFFCC"); # 19 colors
+our $VERSION = "0.10.5";
+my $execCommand = "@ARGV";
+my $resultsDir = fileparse($0).".Results";  # For directory results and directory output name
+my ($fastaFile, $annotFile, $pfamDB, $helpMsg, $versionMsg, $outputDirName,
+	$inputList, $gnFlag); # For input fasta, pfam and annotation files
+my ($annotationFound, $outputFileContent) = (0, "");# Flag for annotation found. Content if at least one annotation is found
+my ($inputEvalue, $accuracy, $cpu) = ("1e-10", "0.85", 1);
+my (%pfamAnnot, %completeHeaders, %colors, %coincidences, %pfName);	# &annotationFile, complete headers &pfamProcess (file COMP)
+my @colorList = ("#00FF55", "#FF5555", "#AABBFF", "#909090", "#FFFF11", "#CC97FC", "#00AC00", "#FF701E", "#99FFFF",
+				"#CBCBCB", "#FFC700", "#EFBFFF", "#CCFFCC", "#FF9999", "#00CCCC", "#EAEAEA", "#FFF5BB", "#C800C1",
+				"#6EB5AA", "#EEAA55"); # 20 colors
 my $colorCounter = 0;
 my $hmmscan = `which hmmscan`;
 chomp $hmmscan;
 $hmmscan = fileparse $hmmscan;
 
-die "Use $0 -h for help.\n" unless getopts('a:c:e:f:ghl:o:p:t:v',\%opts);
-die "Use $0 -h for help.\n" unless %opts;
+GetOptions(
+	'pfam|p=s' => \$pfamDB,
+	'fasta|f=s' => \$fastaFile,
+	'eval|e=s' => \$inputEvalue,
+	'acc|a=s' => \$accuracy,
+	'trin|t=s' => \$annotFile,
+	'cpu|c=s' => \$cpu,
+	'g' => \$gnFlag,	# if -g = 0, if not g = 1
+	'help|h' => \$helpMsg,
+	'version|v' => \$versionMsg,
+	'list|l=s' => \$inputList,
+	'output|o=s' => \$outputDirName,
+) or die "Usage: $0 --help\n";
 
 die "You must need install hmmscan to work with this program. Please get it from www.hmmer.org/download.html \n"
 	unless $hmmscan !~ /\/[hmmscan]\z/;
 
-&HELP_MESSAGE if $opts{h};
-&VERSION_MESSAGE if $opts{v};
-$trFlag = 0 if $opts{g};
-if ($opts{f}) {
-    die "$opts{f} is not a protein file!\n" unless &valFasta($opts{f});	# Validates if the fasta file is a protein file or not.
-}
-$cpu = &validateCPU if $opts{c};
-$inputEvalue = &validateEvalue if $opts{e};
-$accuracy = &validateAccuracy if $opts{a};
-$pfamDB = &lookForDB if $opts{p};
-%pfamAnnot = &annotationFile if $opts{t};
-
-if ($opts{f}){
-    $filename = `readlink -f $opts{f}`;
-    die "You have to indicate the Pfam-A.hmm path (with -p) to use this option.\n" unless $opts{p};
-} elsif ($opts{l}) {
-    if (-e $opts{l}) {
-        $filename = `readlink -f $opts{l}`;
-    } else {
-        $filename = $opts{l};
+&HELP_MESSAGE if $helpMsg;
+&VERSION_MESSAGE if $versionMsg;
+if ($fastaFile) {
+    unless (&valFasta($fastaFile)) {
+        print "$fastaFile is not a protein file!";
+        die "\n";
     }
 }
-chomp $filename;
+$cpu = &validateCPU if $cpu;
+$inputEvalue = &validateEvalue if $inputEvalue;
+$accuracy = &validateAccuracy if $accuracy;
+$pfamDB = &lookForDB if $pfamDB;
+%pfamAnnot = &annotationFile if $annotFile;
 
 # Verifying SDAversion.Results directory and changing directory
-if ($opts{o}){
-    chdir $opts{o};
+if ($outputDirName){
+    chdir $outputDirName;
 } else {
     chdir;
 }
 mkdir "$resultsDir" unless (-e -w "$resultsDir");
 chdir "$resultsDir";
-$resultsDir = `pwd`;
-chomp($resultsDir);
 
-if ($opts{f} || $opts{l}) {
+if ($fastaFile || $inputList) { # If we are going to search a fasta file or a pfam list
     my %fastaSeq;
-    if ($opts{f}){
-	%fastaSeq = &fastaFile($filename);
-	print "Processing sequence files...\n";
-	foreach my $alias (sort keys %fastaSeq) {
-	    &pfamProcess("$alias.PFAM.out") if (-e "$alias.PFAM.out");
-	}
-	&concSeqFiles;
-    } elsif ($opts{l} && $opts{t}) {
-	$outputDirName = "";
-	%fastaSeq = &validatePfamInput($filename);
-	print "Processing PFAM list input...\n";
-	foreach my $alias (sort keys %fastaSeq){
-	    &lookforPfams($fastaSeq{$alias});
-	}
+    if ($fastaFile){
+		die unless($pfamDB);
+		%fastaSeq = &fastaFile($fastaFile);
+		print "Processing sequence files...\n";
+		foreach my $alias (sort keys %fastaSeq) {
+			&pfamProcess("$alias.PFAM.out") if (-e "$alias.PFAM.out");
+		}
+		&concSeqFiles;
+        if($annotFile && $annotationFound) {
+            $outputFileContent .= &distribution;
+            open RESULTS, ">", "$fastaFile.out" || die "$fastaFile.out cannot being opened!\n";
+            print RESULTS "$outputFileContent";
+            close RESULTS;
+            print "\n*** Annotation found! Check your $fastaFile.out file for details. ***\n";
+            print "\n*** You'll find your results in\n\t$resultsDir/$outputDirName/$fastaFile\n\t\t***\n\n";
+        } elsif ($annotFile) {
+            print "\n*** No annotation found! ***\n\n";
+        } elsif (-e "$fastaFile.table") {
+            print "\n*** You'll find your results in\n\t$resultsDir/$outputDirName/$fastaFile\n\t\t***\n\n";
+        } else {
+            print "\n*** No results for the FASTA file with accuracy and e-values indicated.\n\t\t***\n\n";
+            my $subStr = substr $fastaFile, 0, 5;
+            my $moreFiles = `ls -l`;
+            chomp $moreFiles;
+            if ($moreFiles eq "total 0") {
+                chdir "..";
+                system("rm -rf $outputDirName");
+            }
+        }
+	} elsif ($inputList && $annotFile) {
+		$outputDirName = "";
+		%fastaSeq = &validatePfamInput($inputList);
+		print "Processing PFAM list input...\n";
+		foreach my $alias (sort keys %fastaSeq){
+			&lookforPfams($fastaSeq{$alias});
+		}
     } else {
-	die "You have to indicate the path for trinotate annotation file with -t to work with a PFAM list.\n";
-    }
-    $outputFileContent .= &distribution;
-    if($annotationFound) {
-	open RESULTS, ">", "$filename.out" || die "$filename.out cannot being opened!\n";
-        print RESULTS "$outputFileContent";
-        close RESULTS;
-        print "\n*** Annotation found! Check your $filename.out file for details. ***\n";
-	print "\n*** You'll find your results in\n\t$resultsDir/$outputDirName\n***\n\n";
-    } else {
-        print "\n*** No annotation found! ***\n\n";
+		die "You have to indicate the path for trinotate annotation file with -t to work with a PFAM list.\n";
     }
 }
 
 
 ##################################################
-###########	Subroutines	##################
+################# Subroutines ####################
 ##################################################
 sub HELP_MESSAGE {
     print "\nScan Domain Architecture.\n\tThis is the help manual for $0 Version $VERSION.\n\n";
     print "\nUSAGE:\n";
     print "\t$0 -[OPTION] [FILE] ...\n";
     print "\nDESCRIPTION:\n";
-    print "\tSDA creates a summary table for coincidences or similarities between an input FASTA protein sequence file or a PFAM list (.out file). Creates a HMM table profile (.table) and a graph (.pdf) for each sequence in the FASTA file. If there isn't coincidences, SDA won't create the .out file.\n\n";
-    print "\t-a <VALUE>\n";
+    print "\tSDA creates a summary table for coincidences or similarities between an input FASTA protein sequence file or a PFAM list (.out file). Creates a HMM table profile (.table) and a graph (.pdf) for each sequence in the FASTA file. If there isn't coincidences, SDA won't create the .out file.\n";
+    print "\tYou annotation file must have genome column header \"gene_id\" for the gene column; and \"transcript\" for a trasncriptome file. The PFAM column must start with 'pfam'.\n\n";
+    print "\t[-a|--acc] <VALUE>\n";
     print "\t\tuse it to define the accuracy of the hmm table for each domain. This must be a value between 0 and 1 (default, 0.85).\n\n";
-    print "\t-c <VALUE>\n";
+    print "\t[-c|--cpu]  <VALUE>\n";
     print "\t\tuse it to indicate the number of processors for hmmscan.\n\n";
-    print "\t-e <VALUE>\n";
+    print "\t[-e|--eval] <VALUE>\n";
     print "\t\tuse it to change the default e-value (1e-10). This must be positive and with the form #e-# or as an integer.\n\n";
-    print "\t-f <FILE>\n";
+    print "\t[-f|--fasta] <FILE>\n";
     print "\t\tuse it to process a FASTA file and get a domain table as output.\n\n";
     print "\t-g\n";
     print "\t\tuse it if your trinotate annotation file is a gene file. Default is transcriptome.\n\n";
-    print "\t-h, --help\n";
+    print "\t[-h|--help]\n";
     print "\t\tshows this help.\n\n";
-    print "\t-l <LIST|FILE>\n";
+    print "\t[-l|--list] <FILE>\n";
     print "\t\tuse it to search a list of pfams as input or in a file. The pfams must be separated by ','.\n\n";
-    print "\t-o <PATH>\n";
+    print "\t[-o|--output] <PATH>\n";
     print "\t\tuse it to indicate the location of the output results directory.\n\n";
-    print "\t-p <FILE>\n";
+    print "\t[-p|--pfam] <FILE>\n";
     print "\t\tyou MUST use it to indicate the location of your Pfam-A.hmm file.\n\n";
-    print "\t-t <FILE>\n";
+    print "\t[-t|--trin] <FILE>\n";
     print "\t\tuse it to include your trinotate-format anotation file to seach similarities.\n\n";
-    print "\t-v\n";
+    print "\t[-v|--version]\n";
     print "\t\tshows SDA version.\n\n";
     die "\n";
 }
@@ -145,16 +160,19 @@ sub VERSION_MESSAGE{
 }
 
 
-## Validating fasta file
+# Validating if fasta file exists and can be opened
 sub valFasta {
-    my $fastaFile = shift;
-    $fastaFile = `readlink -f $fastaFile`;
-    chomp $fastaFile;
-    open FASTA, "<", "$fastaFile" || die "$fastaFile cannot being opened!\n";
+    my $fastaF = shift;
+    $fastaF = `readlink -f $fastaF`;
+    chomp $fastaF; #open or die
+    unless (open FASTA, "<", "$fastaF") {
+        print "$fastaF cannot being opened!\n";
+        die "\n";
+    }
     while (<FASTA>){
         chomp;
         unless (/^>/ || /^\s/){
-            return 1 if $_ !~ /(a|c|t|g).*/ig;
+            return 1 if $_ !~ /(A|C|T|G).*/ig;
         }
     }
     close FASTA;
@@ -164,18 +182,18 @@ sub valFasta {
 
 ## Validating e value
 sub validateEvalue {
-    my $value = $opts{e};
+    my $value = $inputEvalue;
     if ($value =~ /\A-/gi){
         $value = "1e-10";
-        print "\nWrong format in E-value! Set to $value\n";
-    } elsif ($value =~ /(\d(\.\d+)?)e(-?\d+)/gi){
+        print "Wrong format in E-value! Set to $value\n";
+    } elsif ($value =~ /(\d(\.\d+)?)e(-?\d+)/gi && $value > 0){
         $value = "$1e$3";
-        print "\nEvalue set to $value\n";
-    } elsif ($value =~ /(\d(\.\d+)?)/ig) {
-        print "\nEvalue set to $value\n";
+        print "Evalue set to $value\n";
+    } elsif ($value =~ /(\d(\.\d+)?)/ig && $value > 0) {
+        print "Evalue set to $value\n";
     } else {
         $value = "1e-10";
-        print "\nWrong format in E-value! Set to $value\n";
+        print "Wrong format in E-value! Set to $value\n";
     }
     return $value;
 }
@@ -183,7 +201,7 @@ sub validateEvalue {
 
 # Validating CPUs
 sub validateCPU {
-    my $processors = $opts{c};
+    my $processors = $cpu;
     if($processors > 0) {
     	$processors = ($processors =~ /(\d)(\.\d+)?/) ? $1 : 1;
     	print "CPUs number set to $processors\n";
@@ -195,67 +213,30 @@ sub validateCPU {
 }
 
 
-## Concatenate sequences files
-sub concSeqFiles {
-    my $content = "";
-    my @sequencesFiles = <"$filename.seq*">;
-    my $counterLines = 0;
-    foreach my $file (@sequencesFiles){
-        open FILE, "<", "$file" || die "Cannot open the file $file!\n";
-        while(<FILE>){
-            if ($counterLines < 3){
-                $content .= $_;
-                $counterLines++;
-            } else {
-                unless(/\A#/){ $content .= $_; }
-            }
-        }
-        close FILE;
-    }
-    open SEQ, ">", "$filename.table" || die "$filename.table cannot being created!\n";
-    print SEQ $content;
-    close SEQ;
-    system("convert `ls *.svg` $filename.pdf");
-    system("rm -f $filename.seq* SVG$filename.seq*");
+## Validating input accuracy
+sub validateAccuracy {
+    my $accu = $accuracy;
+    die "Wrong format input! Accuracy must be a number!\n" if ($accu !~ /\d?\.\d+/ig);
+    if ($accu > 0 && $accu < 1) {
+	print "Accuracy set to $accu\n";
+	return $accu;
+    } else { return "0.85"; }
 }
 
 
 ### Looking for Pfam-A.hmm database
 sub lookForDB {	
-    my $filename = $opts{p};
-    die "$filename doesn't exist!\n" unless -e $filename;
-    open PFAM, "<", $filename || die "Cannot open the file!";
+    my $pfdb = $pfamDB;
+    die "$pfdb doesn't exist!\n" unless -e $pfdb;
+    open PFAM, "<", $pfdb || die "Cannot open the file!";
     close PFAM;
-    return $filename;
-}
-
-
-### Sub for identifier headers in annotation file
-sub getHeaders {
-    my $headersLine = shift;
-    my %headersHash;
-    my @patt = ("gene_id", "transcript", "^pfam", "sprot_top_blastp");
-    my @splitted = split /\t/, $headersLine;
-    $headersLine =~ s/#//gi;
-    for(my $counter = 0; $counter < scalar @splitted; $counter++){
-        foreach my $pat (@patt) {
-	    $headersHash{$pat} = $counter if ($splitted[$counter] =~ /$pat/i);
-        }
-    }
-    unless (defined $headersHash{"sprot_top_blastp"}){
-        my $message = ($trFlag) ? "transcriptome" : "genome";
-        die "The annotation file is not a $message file or has a different header for swissprot!.\n";
-    }
-    unless (defined $headersHash{"transcript"}){
-	die "The annotation file is not a transcriptome file!\n" if $trFlag;
-    }
-    return %headersHash;
+    return $pfdb;
 }
 
 
 ### Processing Annotation List file
 sub annotationFile {
-    my $file = $opts{t};
+    my $file = $annotFile;
     my (%headersID, %pfamA);
     die "$file doesn't exists!\n" unless -e $file;
     open ALIST, "<", $file || die "Cannot open the file $file!\n";
@@ -268,23 +249,17 @@ sub annotationFile {
             my @data = split /\t/, $_;
             unless($data[$headersID{"^pfam"}] eq ".") { 
                 my (@pfamsSelected, @pfamKeys) = ((),());
-                my @swissprot    = split /\^/, $data[$headersID{"sprot_top_blastp"}] if $data[$headersID{"sprot_top_blastp"}] ne ".";
                 my @pfamSplitted = split /\`/, $data[$headersID{"^pfam"}];
 
                 foreach (@pfamSplitted){
                     my @pfAlone = split /\^/, $_;
-                    my $joinTEMP = join ",", $pfAlone[0],$pfAlone[3],$pfAlone[4],"$pfAlone[1]-$pfAlone[2]";
+                    my $joinTEMP = join ",", $pfAlone[0],$pfAlone[3],$pfAlone[4], $pfAlone[1], $pfAlone[2]; # ID, location, evalue, name, description
                     push @pfamsSelected, $joinTEMP;
                     push @pfamKeys, (split /\./, $pfAlone[0])[0];
                 }
                 my $spAnnotation = "";
-
-                if ($trFlag && defined $headersID{"transcript"}) {
-                    $spAnnotation = (@swissprot) ? join '|', $data[$headersID{"transcript"}], $swissprot[0], $swissprot[5] : join '|', $data[$headersID{"transcript"}], "NO_SP_ANNOT";
-                } else {
-                    $spAnnotation = (@swissprot) ? join '|', "GENE: $data[0]\t", $swissprot[0], $swissprot[5] : "GENE: $data[0]\tNO_SP_ANNOT";
-                }
                 my $pfamTable = join "\t", @pfamsSelected;
+                $spAnnotation = ($gnFlag && defined $headersID{"transcript"}) ? "TRANSC: $data[$headersID{'transcript'}]" : "GENE: $data[0]\t";
                 $pfamA{join ",", @pfamKeys}{$spAnnotation} = $pfamTable;
             }
         }
@@ -294,30 +269,115 @@ sub annotationFile {
 }
 
 
+### Sub for identifier headers in annotation file
+sub getHeaders {
+    my $headersLine = shift;
+    my %headersHash;
+    my @patt = ("gene_id", "transcript", "^pfam");
+    my @splitted = split /\t/, $headersLine;
+    $headersLine =~ s/#//gi;
+    for(my $counter = 0; $counter < scalar @splitted; $counter++){
+        foreach my $pat (@patt) {
+	        $headersHash{$pat} = $counter if ($splitted[$counter] =~ /$pat/i);
+        }
+    }
+    if (defined $headersHash{"gene_id"} && !$gnFlag) {
+		print "The annotation file is not a transcriptone file!\n";
+		die ".";
+	}
+	if (defined $headersHash{"trasncript"} && $gnFlag) {
+		print "The annotation file is not a genome file!\n";
+		die ".";
+	}
+    return %headersHash;
+}
+
+
+### Processing FASTA file
+sub fastaFile {
+    my $inputFilename = shift;
+    my $extension;
+    die "$inputFilename doesn't exist!\n" unless -e $inputFilename;
+    print "\nProcessing FASTA file\n";
+
+    $fastaFile = fileparse($inputFilename);
+    if ($fastaFile =~ /(\S*)(\.fasta)\z/ig) {
+        $fastaFile = $1;
+        $extension = $2;
+    }
+    $outputDirName = "$fastaFile.Results";
+    my (%sequences, $header, $alias);
+    open FASTA, "<", $inputFilename || die "Cannot open $inputFilename!\n";
+    my $seqCounter = 1;
+
+    if (-e "$outputDirName") {
+        if (-e "$outputDirName/$fastaFile.table" || "$outputDirName/$fastaFile.out" || "$outputDirName/$fastaFile.pdf"){  # If results file exists
+            print "\n$fastaFile exists! ";
+            $fastaFile = "$fastaFile.".time;   # Renaming file adding a time flag, and hence, directory
+            print "Renamed to $fastaFile\n\n";
+        }
+    } else { 
+        mkdir "$outputDirName", 0755;
+    }
+    chdir "$outputDirName";
+
+    # Reading FASTA file and making distinctions between header and sequence.
+	while(<FASTA>){
+		if (/\A>(\S+)(.*)/) {
+            $header = $1;        # Gets complete header of FASTA file
+            $alias = $fastaFile.".seq".($seqCounter < 10 ? "00" : $seqCounter < 100 ? "0" : "").$seqCounter++; # Aliasing header as seq_ _ _
+            $completeHeaders{$alias} = join ' ', $header, $2;						      # Saving complete headers with $alias key
+        } else { $sequences{$alias} .= $_; }
+    }
+    close FASTA;
+
+    foreach my $short (sort keys %sequences) {
+        if ($sequences{$short} ne "") {
+            my $tempfile = ".".$short;
+            unless (-e $tempfile) {                                                # Jump if file exists yet
+                open TEMP,">", "$tempfile" || die "$tempfile cannot be opened!\n";
+                print TEMP ">$short\n$sequences{$short}\n";
+                close TEMP;
+                print "Running $hmmscan $pfamDB $tempfile...\n";
+                system("$hmmscan --cpu $cpu -E $inputEvalue --domT 30 --domtblout $short.PFAM.out $pfamDB $tempfile > /dev/null");
+                &validateFileAccuracy("$short.PFAM.out") if (-e "$short.PFAM.out");
+                system("rm -f .$fastaFile.*");
+            }
+        } else {	delete $sequences{$short}; } # If the sequence is empty, drop it
+    }
+    print "hmmscan search finished!\n\n";
+    return %sequences;
+}
+
+
 ## Processing each seq_ _ _.PFAM.out file generated in sub fastaFile
-sub pfamProcess{
+sub pfamProcess {
     my $inputfile = shift;
     my ($nonEmptyFile, $name) = (0,"");
     open PFAM, "<", $inputfile || die "$inputfile cannot being opened!\n";
     my %order;
-    #  0 target name	 1 accession	 2 tlen		 3 query name	 4 accession	 5 qlen		 6 fullS evalue	  7 fullS score	  8 fullS bias	 9 domain #	10 domain of
-    # 11 dom cEvalue	12 dom iEvalue	13 dom score	14 dom bias	15 from hmm	16 to hmm	17 from ali	 18 to ali	 19 fromEnv	20 toEnv	21 acc		22 desc
+    #  0 target name	 1 accession	2 tlen		 3 query name	 4 accession	 5 qlen		  6 fullS evalue	 7 fullS score
+    #  8 fullS bias	     9 domain      10 domain of 11 dom cEvalue	12 dom iEvalue	13 dom score 14 dom bias	    15 from hmm
+    # 16 to hmm	        17 from ali    18 to ali	19 fromEnv	    20 toEnv	    21 acc  	 22 desc
+    
+    # 00 q_name, 01 qlen, 02 PF, 03 DomName, 04 e-value, 05 score, 06 from_ali, 07 to_ali, 08 from_env,
+    # 09 to_env, 10 acc, 11 description
     while(<PFAM>){
         unless(/\A#/){
             $nonEmptyFile = 1;
             my @line = split /\s+/, $_;
-	    my @desc;							# saving description
-	    push (@desc, pop @line) while (scalar @line > 22);		# description column
-	    $line[22] = join ' ', reverse @desc;			# RE-assigning description
-	    my $accession = (split /\./, $line[1])[0];
-	    $line[0] = "$line[0]\t" if length $line[0] < 8;
-	    $order{$line[3]}{$line[17]} = "$line[18]\t$line[19]\t$line[20]\t$line[1]\t$line[0]\t$line[6]\t\t$line[22]" # toA fromE toE accession pfName eval desc => keys {qName}{fromAli}
+			my @desc;							# saving description
+			push (@desc, pop @line) while (scalar @line > 11);		# description column
+			$line[11] = join ' ', reverse @desc;			# RE-assigning description
+			$line[3] = "$line[1]\t" if length $line[3] < 8;  # DomName
+            # $order{qName}{fromAl} = to_ali  from_env  to_env  PF  name  evalue  description
+			$order{$line[0]}{$line[6]} = "$line[7]\t$line[8]\t$line[9]\t$line[2]\t$line[3]\t$line[4]\t\t$line[11]";
         }
     }
     close PFAM;
     unless ($nonEmptyFile) {
         print "No hmm results for $inputfile... Will be deleted\n";
-        system("rm -f .$inputfile");
+        system("rm -f $inputfile");
         return;
     }
     foreach my $qName (keys %order){						  # Passing through $order{queryName}
@@ -329,10 +389,10 @@ sub pfamProcess{
             $outputFileContent .= "   $fromAl\t$order{$qName}{$fromAl}\n"; # Appending fromA toA fromE toE pfName pfID eval desc
             my $temp = (split "\t", $order{$qName}{$fromAl})[3];	   # Splits "toA fromE toE accession pfID eval desc" and gets accession
             push (@pfam, (split /\./, $temp)[0]);			   # Splits accession and ignores the period
-	    push (@names, (join " ", (split /\./, $temp)[0] , (split "\t", $order{$qName}{$fromAl})[4]));
-	}
-	@pfam = sort @pfam;
-	$outputFileContent .= &scoring(\@pfam, join ", ", @names);
+	        push (@names, (join " ", (split /\./, $temp)[0] , (split "\t", $order{$qName}{$fromAl})[4]));
+	    }
+	    @pfam = sort @pfam;
+	    $outputFileContent .= &scoring(\@pfam, join ", ", @names);
     }
     &graphDomains($inputfile) if (-e "$inputfile" && SVG->can("rectangle"));
 }
@@ -346,27 +406,21 @@ sub validatePfamInput {
     if (-e $file){
         open PFAMS, "<", $file || die "File cannot being opened!\n";
         while(<PFAMS>){
-	    chomp;
-	    @pfams = split ",", $_ || die "Wrong format in $file!\n";
+			chomp;
+			@pfams = split ",", $_ || die "Wrong format in $file!\n";
             $format = ($counter < 10) ? "00" : ($counter < 100 ) ? "0" : "";
-	    $sequences{fileparse $file ."$format".$counter++} .= join ",", @pfams;
-	}
-        close PFAMS;
-	$filename = fileparse $file;
-	if (-e "$filename.out"){
-	    print "\nFile $filename.out exists! ";
-	    $filename = $filename . time;
-	    print "Renamed to $filename.\n\n";
-	}
-	return %sequences;
-    } elsif ($file =~ /((PF\d{5}),?){1,3}/ig) {
-	chomp $file;
-	@pfams = split ",", $file || die "Wrong format in $file!\n";
-	$sequences{"seq001"} .= $file;
-	$filename = "results";
-	return %sequences;
+			$sequences{fileparse $file ."$format".$counter++} .= join ",", @pfams;
+		}
+		close PFAMS;
+		$fastaFile = fileparse $file;
+		if (-e "$fastaFile.out"){
+			print "\nFile $fastaFile.out exists! ";
+			$fastaFile = $fastaFile . time;
+			print "Renamed to $fastaFile.\n\n";
+		}
+		return %sequences;
     } else {
-	die "Wrong format in $file!\n";
+		die "$file cannot be opened!\n";
     }
 }
 
@@ -380,6 +434,118 @@ sub lookforPfams {
 }
 
 
+## Concatenate sequences files
+sub concSeqFiles {
+    my ($content, $moreContent) = ("", 0);
+    my @sequencesFiles = <"$fastaFile.seq*">;
+    my $counterLines = 0;
+    foreach my $file (@sequencesFiles){
+        open FILE, "<", "$file" || die "Cannot open the file $file!\n";
+        while(<FILE>){
+            if ($counterLines < 3){
+                $content .= $_;
+                $counterLines++;
+            } else {
+                unless(/\A#/){ $content .= $_; $moreContent = 1; }
+            }
+        }
+        close FILE;
+    }
+    if ($moreContent) {
+		open SEQ, ">", "$fastaFile.table" || die "$fastaFile.table cannot being created!\n";
+        print SEQ "#\n# $0 $execCommand\n";
+		print SEQ $content;
+		close SEQ;
+		system("convert `ls *.svg` $fastaFile.pdf");
+		system("rm -f $fastaFile.seq* SVG$fastaFile.seq*");
+	}
+}
+
+#######################################################################################
+## Validating HMM output file accuracy
+################## Deleting some columns ############################
+# I am going to conserve: 03 q_name, 05 qlen, 01 ID, 00 DomName, 06 e-value, 07 score, 17 from_ali
+#                         18 to_ali, 19 from_env, 20 to_env, 21 acc, 22 description
+#####################################################################
+sub validateFileAccuracy {
+    my $file = shift;
+    my $newContent = "#" . (" " x 117) . "--ali--  " . "  --env--\n";
+    $newContent .= "# query_name" . (" " x 40) . "qlen  ". "accession   " . "target name" . # 50, 5, 11, 28
+                      (" " x 18) . "E-value    " . "score   ". "from " . " to   " .    # 11, 10, 7, 4, 5
+                     "from " . " to   " . "acc   " . "description of target\n"; # 4, 5, 5, 40
+    $newContent .= "#" . ("-" x 50) . " ----- " . ("-" x 28) . (" ") . ("-" x 11) . " " . ("-" x 10);
+    $newContent .= " -------" . (" ---- -----" x 2) . " ----- " . ("-" x 38) . " \n";
+    
+    open FILE, "<", $file || die "File cannot being opened!\n";
+    while(<FILE>){
+        unless (/^#/) {
+			my @line = split /\s+/, $_;
+            # 00 domName  01 ID       02 tlen     03 q_name    04 accession  05 qlen    06 Evalue      07 score
+            # 08 bias     09 #        10 of       11 cEvalue   12 iEvalue    13 score   14 bias        15 from_hmm
+            # 16 to_hmm   17 from_al  18 to_al    19 from_env  20 to_env     21 acc     22 description
+            $line[1] = (split /\./, $line[1])[0];
+            if ($line[21] >= $accuracy) {
+                $newContent .= "$line[3]" . &spaces(52, $line[3]);  # query_name
+                $newContent .= "$line[5]" . &spaces(6, $line[5]);  # q_length
+                $newContent .= "$line[1]" . &spaces(12, $line[1]);  # pfam_ID
+                $newContent .= "$line[0]" . &spaces(29, $line[0]);  # dom_name
+                $newContent .= "$line[6]" . &spaces(11, $line[6]);  # e-value
+                $newContent .= "$line[7]" . &spaces(8, $line[7]);   # score
+                $newContent .= "$line[17]" . &spaces(5, $line[17]); # from_ali
+                $newContent .= "$line[18]" . &spaces(6, $line[18]); # to_ali
+                $newContent .= "$line[19]" . &spaces(5, $line[19]); # from_env
+                $newContent .= "$line[20]" . &spaces(6, $line[20]); # to_env
+                $newContent .= "$line[21]" . &spaces(6, $line[21]); # accuracy
+                for( my $i = 22; $i < scalar @line; $i++) {
+                    $newContent .= "$line[$i] ";
+                }
+                $newContent .= "\n";
+            }
+		}
+    }
+    close FILE;
+
+    open FILE, ">", $file || die "File cannot being opened!\n";
+    print FILE $newContent;
+    close FILE;
+}
+
+## Returns spaces extra
+sub spaces {
+    my ($maxLength, $cad) = (shift, shift);
+    my $numOfSpaces = $maxLength - (length $cad);
+    if ($numOfSpaces >= 0) { return (" " x $numOfSpaces); }
+    else {       return (" " x $cad); }
+}
+
+
+## Distribution of similarities
+sub distribution {
+    my ($total,$tempString) = (0,"");
+    my (%newCoincidences, %pfNm);
+    foreach my $i (keys %coincidences) {
+        my $eachPfam = (split /-/, $i)[0]; # Takes just the pfams
+	    my $score = (split /-/, $i)[3];	   # Takes score
+        if (exists $newCoincidences{"$eachPfam-$score"}) {
+            $newCoincidences{"$eachPfam-$score"} += 1;
+        } else {
+            $newCoincidences{"$eachPfam-$score"} = 1;
+            $pfNm{"$eachPfam-$score"} = $pfName{$i};
+       }
+    }
+    $total += $newCoincidences{$_} foreach (keys %newCoincidences);
+    $tempString .= "\n\t\t\tPFAM FOUND  (SCORE)\tFREQ\t  R.F.\tQUERY SEQUENCE\n";
+    foreach my $pf (sort keys %newCoincidences) {
+	    my $percent = ($newCoincidences{$pf}/$total)*100;
+	    my ($subPfam, $score) = split /-/, $pf;
+	    $tempString .=  sprintf "%35s  %0.2f   = %5d\t%2.1f%%\t%s\n", $subPfam, $score, $newCoincidences{$pf}, $percent, $pfNm{"$subPfam-$score"};
+    }
+    $tempString .= "    " . sprintf ("-" x 55) . "\n";
+    $tempString .= sprintf "\t\t\t\t      TOTAL =  %5d\n", $total;
+    return $tempString;
+}
+
+
 ## Score function. Keeps the first order hash, the key of this hash, and the PF list
 sub scoring {
     my $pfamref = shift;
@@ -389,209 +555,112 @@ sub scoring {
     my $maj;
 
     foreach my $annot (sort keys %pfamAnnot) {
-	$score = 0;
-	my @annotSplitted = sort (split ",", $annot);
-	for my $a (0..$#ipfams) {
-	    for( my $b = $index; $b < scalar @annotSplitted; $b++){
-		if ($ipfams[$a] eq $annotSplitted[$b]) {
-		    $score++;
-		    $index = ++$b;
-		    last;
-		}
-	    }
-	}
-	$maj = (scalar @ipfams > scalar @annotSplitted) ? scalar @ipfams : scalar @annotSplitted;
-	if ( $score/$maj >= 0.3 ) {
-	    $annotationFound = 1;
-	    foreach my $annotKey (sort keys $pfamAnnot{$annot}) {
-		$tempString .= "## Pfam structure SIMILARITY for $annotKey\n";
-		my @pfams = split "\t", $pfamAnnot{$annot}{$annotKey};
-		my ($from, $to, $name, $desc, $eval);
-		foreach my $individualPF (@pfams) {
-		    my @splitted = split ",", $individualPF;
-		    ($from, $to, $name, $desc, $eval) = ( (split /-/, $splitted[1]), (split /-/, $splitted[3]), (split /:/, $splitted[2])[1] );
-		    $name = "$name\t" if length $name < 8;
-		    $tempString .= "   $from\t$to\t -- \t -- \t$splitted[0]\t$name\t$eval\t\t$desc\n";
-		}
-		unless (exists $coincidences{"$annot-$from-$to"}) {
-		    $coincidences{"$annot-$from-$to"} = 1;
-		    $pfName{"$annot-$from-$to"} = $pfamList;
-		}
-	    }
-        }
-    }
-    return $tempString;
-}
-
-
-### Processing FASTA file
-sub fastaFile {
-    my $inputFilename = shift;
-    die "$inputFilename doesn't exist!\n" unless -e $inputFilename;
-    print "Processing FASTA file\n";
-
-    $filename = fileparse($inputFilename);
-    $outputDirName = "$filename.Results";
-    my (%sequences, $header, $alias);
-    open FASTA, "<", $inputFilename || die "Cannot open $inputFilename!\n";
-    my $seqCounter = 1;
-
-    if (-e "$outputDirName") {
-        if (-e "$outputDirName/$filename.table" || "$outputDirName/$filename.out" || "$outputDirName/$filename.pdf"){  # If results file exists
-            print "\n$filename exists! ";
-            $filename = "$filename.".time;   # Renaming file adding a time flag, and hence, directory
-            print "Renamed to $filename\n\n";
-        }
-    } else {
-        mkdir "$outputDirName", 0755;
-    }
-    chdir "$outputDirName";
-
-    # Reading FASTA file and making distinctions between header and sequence.
-    while(<FASTA>){
-        if (/\A>(\S+)(.*)/) {
-            $header = $1;        # Gets complete header of FASTA file
-            $alias = $filename.".seq".($seqCounter < 10 ? "00" : $seqCounter < 100 ? "0" : "").$seqCounter++; # Aliasing header as seq_ _ _
-            $completeHeaders{$alias} = join ' ', $header, $2;						      # Saving complete headers with $alias key
-        } else {
-            $sequences{$alias} .= $_;
-        }
-    }
-    close FASTA;
-
-    foreach my $short (sort keys %sequences){
-        if ($sequences{$short} ne ""){
-            my $tempfile = ".".$short;
-            unless (-e $tempfile) {                                                # Jump if file exists yet
-                open TEMP,">", "$tempfile" || die "$tempfile cannot be opened!\n";
-                print TEMP ">$short\n$sequences{$short}\n";
-                close TEMP;
-                print "Running $hmmscan $pfamDB $tempfile...\n";
-                # The PFAM.out file created will be used in sub procesar.
-                system("$hmmscan --cpu $cpu -E $inputEvalue --domT 30 --domtblout $short.PFAM.out $pfamDB $tempfile > /dev/null");
-                &validateFileAccuracy("$short.PFAM.out") if (-e "$short.PFAM.out");
-                system("rm -f .$filename.*");
+	    $score = 0;
+	    my @annotSplitted = sort (split ",", $annot);
+	    for my $a (0..$#ipfams) {
+	        for( my $b = $index; $b < scalar @annotSplitted; $b++){
+		        if ($ipfams[$a] eq $annotSplitted[$b]) {
+		            $score++;
+		            $index = ++$b;
+                    last;
+                }
             }
-        } else {				# If the sequence is empty, drop it
-            delete $sequences{$short};
+	    }
+	    $maj = (scalar @ipfams > scalar @annotSplitted) ? scalar @ipfams : scalar @annotSplitted;
+	    my $sScore = $score/$maj;
+	    if ( $sScore > 0.0 ) { # 0.3
+	        $annotationFound = 1;
+	        foreach my $annotKey (sort keys $pfamAnnot{$annot}) {
+		        $tempString .= "## Pfam structure SIMILARITY for $annotKey\n";
+		        my @pfams = split "\t", $pfamAnnot{$annot}{$annotKey};
+                my ($from, $to, $name, $desc, $eval);
+		        foreach my $individualPF (@pfams) {
+		            my @splitted = split ",", $individualPF;
+		            ($from, $to, $name, $desc, $eval) = ( (split /-/, $splitted[1]), $splitted[3], $splitted[4], (split /:/, $splitted[2])[1] );
+		            $name = "$name\t" if length $name < 8;
+		            $tempString .= "   $from\t$to\t -- \t -- \t$splitted[0]\t$name\t$eval\t\t$desc\n";
+		        }
+		        unless (exists $coincidences{"$annot-$from-$to-$sScore"}){
+		            $coincidences{"$annot-$from-$to-$sScore"} = 1;
+		            $pfName{"$annot-$from-$to-$sScore"} = $pfamList;
+		        }
+	        }
         }
     }
-    print "hmmscan search finished!\n\n";
-    return %sequences;
-}
-
-
-## Validating HMM output file accuracy
-sub validateFileAccuracy {
-    my $file = shift;
-    my $newContent = "";
-
-    open FILE, "<", $file || die "File cannot being opened!\n";
-    while(<FILE>){
-        if (/^#/) {
-	    $newContent .= $_
-	} else {
-	    my @line = split /\s+/, $_;
-            $newContent .= $_ if $line[21] > $accuracy;
-	}
-    }
-    close FILE;
-
-    open FILE, ">", $file || die "File cannot being opened!\n";
-    print FILE $newContent;
-    close FILE;
-}
-
-
-## Distribution of similarities
-sub distribution {
-    my ($total,$tempString) = (0,"");
-    my (%newCoincidences, %pfNm);
-    foreach (keys %coincidences){
-        my $eachPfam = (split /-/, $_)[0];
-        if (exists $newCoincidences{$eachPfam}) {
-            $newCoincidences{$eachPfam} += 1;
-        } else {
-            $newCoincidences{$eachPfam} = 1;
-            $pfNm{$eachPfam} = $pfName{$_};
-       }
-    }
-    $total += $newCoincidences{$_} foreach (keys %newCoincidences);
-    $tempString .= "\n\t\tPFAM FOUND\t\t  FREQ\t R.F.\tQUERY SEQUENCE\n";
-    foreach my $pf (sort keys %newCoincidences){
-        my $percent = ($newCoincidences{$pf}/$total)*100;
-        $tempString .=  sprintf "%35s =   %5d\t%2.1f%%\t%s\n", $pf, $newCoincidences{$pf}, $percent, $pfNm{$pf};
-    }
-    $tempString .= "    " . sprintf ("-" x 55) . "\n";
-    $tempString .= sprintf "\t\t\t      TOTAL =   %5d\n", $total;
     return $tempString;
-}
-
-
-## Validating input accuracy
-sub validateAccuracy {
-    my $accu = $opts{a};
-    die "Wrong format input! Accuracy must be a number!\n" if ($accu !~ /\d?\.\d+/ig);
-    if ($accu > 0 && $accu < 1) {
-	print "Accuracy set to $accu\n";
-	return $accu;
-    } else { return "0.85"; }
 }
 
 
 ## Sub for graphs. Runs over each seq_ _ _.PFAM.out file
 sub graphDomains {
     my $pfamFile = shift;
-    my ($qLength, $size, $spacing, $column);
-    my ($gHeight, $name, $space, @data) = (350, "", 20, ());
+    my ($qLength, $size, $spacing, $column, $nameLength);
+    my ($gHeight, $name, $space, @data) = (380, "", 20, ());
     my $fHeight = $gHeight/5;
     my %localColors = ();
     $name = ($pfamFile =~ /(.*)\.PFAM\.out/) ? $completeHeaders{$1} : $pfamFile;
+    $nameLength = length($name);
 
     open FILE, "<", "$pfamFile" || die "$pfamFile cannot being opened for graphs!";
     while(<FILE>){
         unless(/\A#/){
             my @line = split /\s+/, $_;
-            push(@data, join ',', $line[18]-$line[17], $line[17], $line[0]);
-            $qLength = $line[5] unless defined $qLength;
-            $colors{$line[0]} .= $colorList[$colorCounter++ % scalar @colorList];
-            $localColors{$line[0]} = $colors{$line[0]};
+    
+    # 00 q_name, 01 qlen, 02 PF, 03 DomName, 04 e-value, 05 score, 06 from_ali, 07 to_ali, 08 from_env,
+    # 09 to_env, 10 acc, 11 description
+            # Graphing toAli - fromAli, fromAli, fromAli, domName
+            push(@data, join ',', $line[7]-$line[6], $line[6], $line[3]);
+            $qLength = $line[1] unless defined $qLength; # qlen
+            $colors{$line[3]} .= $colorList[$colorCounter++ % scalar @colorList]; # domName
+            $localColors{$line[3]} = $colors{$line[3]}; # domName
         }
     }
     close FILE;
 
     $column = (scalar keys %localColors < 6 ) ? 2 : (scalar keys %localColors < 12) ? 4 : 6;
-    $size = (length $name > $qLength/2) ? 8 : 3;
-
+    $size = ($nameLength > $qLength/2) ? 8 : 3;
+    
     my $svg = SVG->new( width => 4*$qLength + $size*$space + 130*$column, height => $gHeight );
 
-    $svg->line( x1 => 3*$space, y1 => $gHeight/2, x2 => $space + 4*$qLength, y2 => $gHeight/2, 'stroke' => 'black' );
-    $svg->text('x' => $space, 'y' => 2*$space, 'fill' => 'black', 'font-size' => 26)->cdata("$name");
-    $svg->text('x' => $space, 'y' => 320, 'fill' => 'black', 'font-size' => 26)->cdata("Query length = $qLength");
+    $svg->line( x1 => 3*$space, y1 => $gHeight/2 + 20, x2 => $space + 4*$qLength, y2 => $gHeight/2 + 20, 'stroke' => 'black' );
+    $svg->text('x' => $space, 'y' => 350, 'fill' => 'black', 'font-size' => 27)->cdata("Query length = $qLength"); # query length
+    if ($nameLength > $qLength/3) {
+        my $nameLimit = $qLength/3 + 14;
+        $svg->text('x' => $space, 'y' => 2*$space, 'fill' => 'black', 'font-size' => 27)->cdata(substr $name, 0, $nameLimit);  # Name
+        $svg->text('x' => $space + 10, 'y' => 2*$space + 27, 'fill' => 'black', 'font-size' => 27)->cdata("   " . substr $name, $nameLimit);
+    } else {
+        $svg->text('x' => $space, 'y' => 2*$space, 'fill' => 'black', 'font-size' => 27)->cdata($name);  # Name
+    }
     ($size, $column) = (0, 0); # var for change rectangles size
 
-    foreach my $graph (@data){
+    my $max = 4*$qLength + $space; # Maximum value
+    foreach my $graph (@data) {
         my @elem = split ',', $graph;   # Splitting tLength and from
+        my ($xCoor, $yCoor, $width) = (3*$space + 4*$elem[1], $fHeight + $size/2 + 20, $elem[0]*4);
+        my ($rX, $rY) = (0, 0);
+        
+        if ($width + $xCoor < $max) {
+            $rX = $rY = 20;
+        } else {
+            $rX = $rY = 0;
+            $width = $max - $xCoor;
+        }
         $svg->rectangle(
-            x => 3*$space + 4*$elem[1], y => $fHeight + $size/2, rx => 20, ry => 20,		 # Coord, 'y' is incremented to note differences
-            width => $elem[0]*4, height => 3*$fHeight - $size,					 # size, height decremented in $size
+            x => $xCoor, y => $yCoor, rx => $rX, ry => $rY, width => $width, height => 3*$fHeight - $size, # Coords, round, 'y' is incremented
             style => {'fill' => "$colors{$elem[2]}", 'stroke-width' => 1, 'fill-opacity' => 0.8} # Changing color for each element (at most 12)
         );
-        $size = ($size == 125) ? 0 : $size + 25;						 # Changing size of rectangles
+        $size = ($size == 125) ? 0 : $size + 25;		# Changing size of rectangles
     }
     $space = 80;
-    foreach my $elem (sort keys %localColors){
-	$svg->rectangle(x => 4*$qLength + 100 + $column, y => $space,
+    foreach my $elem (sort keys %localColors) {
+	    $svg->rectangle(x => 4*$qLength + 50 + $column, y => $space,
             width => 30, height => 30, style => {'fill' => $colors{$elem}, 'fill-opacity' => 0.8}
         );
-        $svg->text( 'x' => 4*$qLength + 140 + $column, 'y' => $space + 20, 'fill' => 'black',
-            'font-size' => 20,)->cdata("$elem");
-        if($space % 280 == 0){
-	    $space = 80;
-	    $column += 200;
-        } else {
-            $space += 40;
-        }
+        $svg->text( 'x' => 4*$qLength + 90 + $column, 'y' => $space + 20, 'fill' => 'black',
+            'font-size' => 24,)->cdata("$elem"); # domain
+        if ($space % 280 == 0) {
+	        $space = 80; $column += 200;
+        } else {  $space += 40; }
     }
     my $newfile = "SVG" . fileparse($pfamFile) . ".svg";
 
