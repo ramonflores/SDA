@@ -1,7 +1,7 @@
 #! /usr/bin/env perl
 
 #########################################################################################################
-## SDA v 0.10.5   -    July, 2016
+## SDA v 0.10.6   -    July, 2016
 ##
 ## This script was created at the Biotechnology Institute of the UNAM. Cuernavaca, Morelos. Mexico.
 ## 
@@ -15,9 +15,9 @@ use warnings;
 use strict;
 use Getopt::Long qw(GetOptions);
 use File::Basename;	 # For get filenames.
-use SVG;		 # For graphs
+use SVG;		     # For graphs
 
-our $VERSION = "0.10.5";
+our $VERSION = "0.10.6";
 my $execCommand = "@ARGV";
 my $resultsDir = fileparse($0).".Results";  # For directory results and directory output name
 my ($fastaFile, $annotFile, $pfamDB, $helpMsg, $versionMsg, $outputDirName,
@@ -26,8 +26,8 @@ my ($annotationFound, $outputFileContent) = (0, "");# Flag for annotation found.
 my ($inputEvalue, $accuracy, $cpu) = ("1e-10", "0.85", 1);
 my (%pfamAnnot, %completeHeaders, %colors, %coincidences, %pfName);	# &annotationFile, complete headers &pfamProcess (file COMP)
 my @colorList = ("#00FF55", "#FF5555", "#AABBFF", "#909090", "#FFFF11", "#CC97FC", "#00AC00", "#FF701E", "#99FFFF",
-		 "#CBCBCB", "#FFC700", "#EFBFFF", "#CCFFCC", "#FF9999", "#00CCCC", "#EAEAEA", "#FFF5BB", "#C800C1",
-		 "#6EB5AA", "#EEAA55"); # 20 colors
+				"#CBCBCB", "#FFC700", "#EFBFFF", "#CCFFCC", "#FF9999", "#00CCCC", "#EAEAEA", "#FFF5BB", "#C800C1",
+				"#6EB5AA", "#EEAA55"); # 20 colors
 my $colorCounter = 0;
 my $hmmscan = `which hmmscan`;
 chomp $hmmscan;
@@ -53,13 +53,24 @@ die "You must need install hmmscan to work with this program. Please get it from
 &HELP_MESSAGE if $helpMsg;
 &VERSION_MESSAGE if $versionMsg;
 if ($fastaFile) {
+    $fastaFile = `readlink -f $fastaFile`;
+    chomp $fastaFile;
     unless (&valFasta($fastaFile)) {
         print "$fastaFile is not a protein file!";
         die "\n";
     }
-    $fastaFile = `readlink -f $fastaFile`;
-    chomp $fastaFile;
 }
+##################################################################
+if ($inputList) {
+    $inputList = `readlink -f $inputList`;
+    chomp $inputList;
+    unless (-e $inputList) {
+        print "$inputList doesn't exist!";
+        die "\n";
+    }
+}
+##################################################################
+
 $cpu = &validateCPU if $cpu;
 $inputEvalue = &validateEvalue if $inputEvalue;
 $accuracy = &validateAccuracy if $accuracy;
@@ -107,12 +118,22 @@ if ($fastaFile || $inputList) { # If we are going to search a fasta file or a pf
             }
         }
 	} elsif ($inputList && $annotFile) {
-		$outputDirName = "";
 		%fastaSeq = &validatePfamInput($inputList);
 		print "Processing PFAM list input...\n";
 		foreach my $alias (sort keys %fastaSeq){
 			&lookforPfams($fastaSeq{$alias});
 		}
+        if ($annotationFound) {
+            $outputFileContent .= &distribution;
+            $inputList = fileparse $inputList;
+            open RESULTS, ">", "$inputList.out" || die "$inputList.out cannot being opened!\n";
+            print RESULTS "$outputFileContent";
+            close RESULTS;
+            print "\n*** Annotation found! Check your $inputList.out file for details. ***\n";
+            print "\n*** You'll find your results in\n\t$resultsDir/\n\t\t***\n\n";
+        } else {
+            print "\n*** No results for the PFAM architecture file.\n\t\t***\n\n";
+        }
     } else {
 		die "You have to indicate the path for trinotate annotation file with -t to work with a PFAM list.\n";
     }
@@ -165,8 +186,6 @@ sub VERSION_MESSAGE{
 # Validating if fasta file exists and can be opened
 sub valFasta {
     my $fastaF = shift;
-    $fastaF = `readlink -f $fastaF`;
-    chomp $fastaF; #open or die
     unless (open FASTA, "<", "$fastaF") {
         print "$fastaF cannot being opened!\n";
         die "\n";
@@ -178,6 +197,7 @@ sub valFasta {
         }
     }
     close FASTA;
+    print "\nFASTA file validated...\n";
     return 0;
 }
 
@@ -317,7 +337,7 @@ sub fastaFile {
         if (-e "$outputDirName/$fastaFile.table" || "$outputDirName/$fastaFile.out" || "$outputDirName/$fastaFile.pdf"){  # If results file exists
             print "\n$fastaFile exists! ";
             $fastaFile = "$fastaFile.".time;   # Renaming file adding a time flag, and hence, directory
-            print "Renamed to $fastaFile\n\n";
+            print " to $fastaFile\n\n";
         }
     } else { 
         mkdir "$outputDirName", 0755;
@@ -404,6 +424,8 @@ sub pfamProcess {
 ## If user choose pfams to search
 sub validatePfamInput {
     my $file = shift;
+    $file = `readlink -f $file`;
+    chomp $file;
     my ($counter, $format, @pfams) = (0, ".seq",());
     my %sequences;
     if (-e $file){
@@ -415,15 +437,19 @@ sub validatePfamInput {
 			$sequences{fileparse $file ."$format".$counter++} .= join ",", @pfams;
 		}
 		close PFAMS;
-		$fastaFile = fileparse $file;
-		if (-e "$fastaFile.out"){
-			print "\nFile $fastaFile.out exists! ";
-			$fastaFile = $fastaFile . time;
-			print "Renamed to $fastaFile.\n\n";
+        
+        $file = fileparse $file;   # Dropping extension
+        
+        $inputList = fileparse $file;
+        
+		if (-e "$inputList.out"){
+			print "\nFile $file.out exists! ";
+            $inputList = $file . time;
+			print "Renamed to $inputList.\n\n";
 		}
 		return %sequences;
     } else {
-		die "$file cannot be opened!\n";
+		die "$file not exists!\n";
     }
 }
 
@@ -525,7 +551,7 @@ sub spaces {
 ## Distribution of similarities
 sub distribution {
     my ($total,$tempString) = (0,"");
-    my (%newCoincidences, %pfNm);
+    my (%newCoincidences, %pfNm, %totals);
     foreach my $i (keys %coincidences) {
         my $eachPfam = (split /-/, $i)[0]; # Takes just the pfams
 	    my $score = (split /-/, $i)[3];	   # Takes score
@@ -535,8 +561,13 @@ sub distribution {
             $newCoincidences{"$eachPfam-$score"} = 1;
             $pfNm{"$eachPfam-$score"} = $pfName{$i};
        }
-    }
-    $total += $newCoincidences{$_} foreach (keys %newCoincidences);
+       $totals{$eachPfam} = 0;
+    } ###################################
+    foreach my $arch (sort keys %newCoincidences) {
+        my $ar = (split /-/, $arch)[0];  # Gets Pfam architecture
+        $totals{$ar} = $newCoincidences{$arch} unless ($totals{$ar} != 0);
+    }######################################
+    $total += $totals{$_} foreach (keys %totals);
     $tempString .= "\n\t\t\tPFAM FOUND  (SCORE)\tFREQ\t  R.F.\tQUERY SEQUENCE\n";
     foreach my $pf (sort keys %newCoincidences) {
 	    my $percent = ($newCoincidences{$pf}/$total)*100;
