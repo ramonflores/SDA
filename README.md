@@ -6,10 +6,10 @@ Scan Domain Architecture (SDA) is an script created with the purpose of doing so
 ## Requirements
 To get a better experience, there are some considerations you have to take before start using SDA.
 
-* SDA was developed in a UNIX/Linux environment, so it might not work if you use it on a Windows or MAC environment.
-* SDA is a script developed with Perl v5.18.2. We didn't use any version pragma, so we hope you can use it no matter your Perl  version.
+* SDA was developed and tested under UNIX/Linux environment: Biolinux (Ubuntu-based) and Scientific Linux (RHEL-based), so it might not work if you use it on a Windows or MAC/OS environment.
+* SDA is a script developed with Perl v5.18.2. Although we didn't use any version pragma, you might need Perl v5.18.2 or later.
 * SDA uses the Perl module **SVG** to make graphics. You have to install this module to make SDA works.
-* You have to get the [**HMMER suite**][2] to make SDA works. For SDA we use HMMER v3.1b1.
+* You have to get the [**HMMER suite**][2] v3.1b1 or v3.1b2 to make SDA works.
 * You also need the **Pfam-A.hmm** file, this file is used for searching and getting some useful information about the input file. For this work, we use the Pfam version 29 (February, 2016), you might download it from **FTP->releases->Pfam29.0->Pfam-A.hmm.gz** on the pfam site [pfam.xfam.org/][3].
 * For the GUI, you need Java 7 or later.
 
@@ -21,7 +21,7 @@ An important difference is that SDA not only shows coincidences, SDA is capable 
 
 
 ## Finally
-We really hope this work might be useful for you because that is its purpose. Check the [SDA user guide.pdf](https://github.com/ramonflores/SDA/blob/master/SDA%20user%20guide.pdf) to know more about SDA.
+We really hope this work might be useful for you because that is its purpose. Check the [SDA user guide.pdf](https://github.com/ramonflores/SDA/blob/0.11/SDA_0.11.pdf) to know more about SDA.
 
 
 
